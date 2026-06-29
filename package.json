@@ -1,0 +1,12 @@
+{
+  "name": "airspace-zones",
+  "version": "1.0.0",
+  "description": "Clean interactive map of Latvia's UAS (drone) geographical zones, refreshed daily from the official ED-269 dataset.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:data": "node scripts/build-zones.mjs",
+    "serve": "python -m http.server 8000"
+  },
+  "license": "UNLICENSED"
+}

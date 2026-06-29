@@ -1,0 +1,4 @@
+# Normalise line endings: store text as LF in the repo regardless of OS.
+# Critical so the GitHub Actions workflow's shell steps don't get CRLF on Linux.
+* text=auto eol=lf
+*.geojson text eol=lf

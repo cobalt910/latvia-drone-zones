@@ -1,0 +1,58 @@
+name: Rebuild A3 overlay (monthly)
+
+# The A3 ground-risk overlay is derived from OpenStreetMap, which changes slowly,
+# so a monthly rebuild is plenty. Runs on the 1st at 03:00 UTC — before the daily
+# zones job (04:17) so the two never fight over the Pages deploy.
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'        # 03:00 UTC, 1st of every month
+  workflow_dispatch:            # manual "Run workflow" button
+
+permissions:
+  contents: write               # commit refreshed A3 data
+  pages: write                  # deploy Pages
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false     # wait for any in-flight deploy, never cancel it
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install geo dependencies
+        run: pip install --quiet geopandas pyogrio
+
+      - name: Rebuild A3 overlay (downloads the OSM extract itself)
+        run: python scripts/build-a3.py
+
+      - name: Commit refreshed A3 data (if changed)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/a3-exclusion.geojson.gz data/a3-meta.json
+          if git diff --cached --quiet; then
+            echo "No change in A3 data."
+          else
+            git commit -m "data: refresh A3 overlay ($(date -u +%Y-%m-%d))"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deploy
+        uses: actions/deploy-pages@v4

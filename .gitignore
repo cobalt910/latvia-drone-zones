@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# local recon scratch — not part of the site
+airspace_drones.html
+base.js
+config.json
+geo.html
+drz_home.html
+ed269.json
