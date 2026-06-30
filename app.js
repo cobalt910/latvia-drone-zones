@@ -248,15 +248,26 @@ const sheetTop = sheet.querySelector('.sheet-top');
 // the sheet has two snap points: 'full' (all content) and 'peek' (just the header)
 const PEEK_VISIBLE = 168;             // px kept on screen when collapsed to peek (shows banner + coords)
 let sheetState = 'full';
+// Peek snaps to just below the coords line, measured live — so it's right no matter how
+// tall the verdict banner wraps (more zones = longer sub-text) or how much content sits below.
+function peekVisiblePx() {
+  const meta = sheet.querySelector('.sv-meta');
+  if (!meta) return PEEK_VISIBLE; // fallback when there's no spot-check content
+  return Math.round(meta.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top + 12);
+}
+function peekOffset() { return Math.max(0, sheet.offsetHeight - peekVisiblePx()); }
 function setSheetState(state) {
   sheetState = state;
-  sheet.style.transition = '';        // animate to the snap point via the CSS class
-  sheet.style.transform = '';
+  sheet.style.transition = '';        // animate to the snap point
   sheet.classList.toggle('peek', state === 'peek');
-  if (state === 'peek') sheetBody.scrollTop = 0; // show the header, not wherever it was scrolled
+  if (state === 'peek') {
+    sheetBody.scrollTop = 0;           // show the header, not wherever it was scrolled
+    sheet.style.transform = `translate(-50%, ${peekOffset()}px)`; // measured, content-independent
+  } else {
+    sheet.style.transform = '';        // back to the CSS .sheet.open position
+  }
   updateRecenter();
 }
-function peekOffset() { return Math.max(0, sheet.offsetHeight - PEEK_VISIBLE); }
 
 // write the content and raise the sheet up (a fresh result always opens full)
 function fillSheet(html, opts) {
@@ -310,7 +321,7 @@ function markerVisible() {
   const p = map.project([lastSpotLL.lng, lastSpotLL.lat]);
   const c = map.getContainer();
   // bottom of the visible map = the sheet's top edge at its current snap point
-  const sheetTop = sheetState === 'peek' ? c.clientHeight - PEEK_VISIBLE : c.clientHeight - sheet.offsetHeight;
+  const sheetTop = sheetState === 'peek' ? c.clientHeight - peekVisiblePx() : c.clientHeight - sheet.offsetHeight;
   return p.x > 24 && p.x < c.clientWidth - 24 && p.y > 24 && p.y < sheetTop - 16;
 }
 function updateRecenter() {

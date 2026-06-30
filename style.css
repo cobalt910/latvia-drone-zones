@@ -231,7 +231,7 @@ body {
   will-change: transform;
 }
 .sheet.open { transform: translate(-50%, 0); }
-.sheet.open.peek { transform: translate(-50%, calc(100% - 168px)); }
+/* peek transform is set inline from JS (measured to the coords line); class only hides body scroll */
 .sheet.open.peek .sheet-body { overflow-y: hidden; }
 .sheet-expand {
   position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
