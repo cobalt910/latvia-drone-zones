@@ -9,7 +9,7 @@
  *
  * Bump VERSION on any caching-strategy change to purge old caches.
  */
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = `tiles-${VERSION}`;
@@ -44,6 +44,8 @@ self.addEventListener('fetch', (e) => {
     return; // live weather only
   } else if (url.host.includes('unpkg.com')) {
     e.respondWith(cacheFirst(e.request, SHELL)); // version-pinned, immutable
+  } else if (url.host.includes('fonts.googleapis.com') || url.host.includes('fonts.gstatic.com')) {
+    e.respondWith(cacheFirst(e.request, SHELL)); // web fonts: cache for offline use
   } else if (/arcgisonline|cartocdn|\/tile/.test(url.host + url.pathname)) {
     e.respondWith(cacheFirst(e.request, TILES));
   } else if (url.origin === self.location.origin) {

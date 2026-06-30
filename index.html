@@ -8,6 +8,9 @@
   <!-- set theme before paint to avoid a flash of the wrong colours -->
   <script>try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; }</script>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1b1f27" />
@@ -57,6 +60,11 @@
       <input id="search" type="search" placeholder="Search address or place…" autocomplete="off" />
       <button id="searchClear" class="sb-clear" aria-label="Clear search">×</button>
       <ul id="searchResults" class="search-results"></ul>
+    </div>
+    <div class="chips" id="chips">
+      <button class="chip" id="chipActive" type="button"><span class="chip-dot"></span>Active now</button>
+      <button class="chip" id="chipAlt" type="button">≤ <b id="chipAltVal">120</b> m AGL</button>
+      <button class="chip" id="chipA3" type="button"><span class="chip-a3sw"></span>A3 risk</button>
     </div>
   </div>
 
@@ -111,16 +119,6 @@
         <button data-base="hybrid" class="active">Hybrid</button>
         <button data-base="light">Light</button>
       </div>
-      <div class="lm-title">Overlays</div>
-      <label class="check">
-        <input type="checkbox" id="a3On" />
-        <span><span class="a3-swatch"></span>A3 ground-risk (no-fly)</span>
-      </label>
-      <p class="hint">Shaded = within <b>150 m</b> of residential / commercial / industrial / recreational areas and <b>public roads</b> — too close for the <b>A3</b> subcategory. Footpaths, trails and gatherings can still hold people: that's situational and isn't shown, so always look before you fly. Obey the airspace zones above and the 120 m limit. OpenStreetMap-based aid, not legal proof.</p>
-      <label class="check" style="margin-top:6px">
-        <input type="checkbox" id="threeD" />
-        <span>3D height columns</span>
-      </label>
     </div>
     <button id="layersBtn" class="layers-btn" aria-label="Layers">
       <svg class="layers-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z"/></svg>

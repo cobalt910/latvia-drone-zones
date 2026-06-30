@@ -7,14 +7,25 @@
  * ------------------------------------------------------------------ */
 
 const RESTRICTIONS = [
-  { key: 'PROHIBITED',       label: 'Prohibited',           color: '#d11149' },
-  { key: 'REQ_AUTHORISATION', label: 'Authorisation req.',  color: '#ef6c00' },
-  { key: 'CONDITIONAL',      label: 'Conditional',          color: '#f5c518' },
-  { key: 'NO_RESTRICTION',   label: 'No restriction',       color: '#2e9e5b' },
-  { key: 'UNKNOWN',          label: 'Other',                color: '#8a94a3' },
+  { key: 'PROHIBITED',        label: 'Prohibited',           color: '#f0506a' },
+  { key: 'REQ_AUTHORISATION', label: 'Authorisation req.',   color: '#f5a524' },
+  { key: 'CONDITIONAL',       label: 'Conditional',          color: '#4f8ef7' },
+  { key: 'NO_RESTRICTION',    label: 'No restriction',       color: '#34d399' },
+  { key: 'UNKNOWN',           label: 'Other',                color: '#aab4c2' },
 ];
 const COLOR_OF = Object.fromEntries(RESTRICTIONS.map((r) => [r.key, r.color]));
 const SEVERITY = { PROHIBITED: 4, REQ_AUTHORISATION: 3, CONDITIONAL: 2, NO_RESTRICTION: 1, UNKNOWN: 0 };
+
+// Fixed dark tint per verdict colour: banner/badge backgrounds + soft "ink" text.
+// (Alpha-over-dark looked too bright/blue; the design uses hand-picked dark tones.)
+const TINTS = {
+  '#f0506a': { bg: '#34141f', line: '#5a2233', ink: '#ffb3c1' },  // prohibited
+  '#f5a524': { bg: '#2a2109', line: '#5a4516', ink: '#ffd479' },  // authorisation req.
+  '#4f8ef7': { bg: '#102542', line: '#23436f', ink: '#9ec1ff' },  // conditional
+  '#34d399': { bg: '#15301e', line: '#1f4a2e', ink: '#86d3a1' },  // clear / no restriction
+  '#aab4c2': { bg: '#232833', line: '#3a414d', ink: '#cdd5e0' },  // unknown
+};
+const tintOf = (c) => TINTS[c] || { bg: '#232833', line: '#2a313c', ink: c };
 const CAA_APPLY = 'https://e.caa.gov.lv/uas-operations';
 
 // MapLibre color expression: restriction -> fill color.
@@ -25,8 +36,8 @@ colorExpr.push('#8a94a3'); // default
 // Brighter ramp used over the near-black base map — the canonical colours go
 // muddy at low opacity on black, these read as clean glows.
 const DARK_COLORS = {
-  PROHIBITED: '#ff4d6d', REQ_AUTHORISATION: '#ff9a3d', CONDITIONAL: '#ffd24a',
-  NO_RESTRICTION: '#3ddc84', UNKNOWN: '#aab4c2',
+  PROHIBITED: '#f0506a', REQ_AUTHORISATION: '#f5a524', CONDITIONAL: '#4f8ef7',
+  NO_RESTRICTION: '#34d399', UNKNOWN: '#aab4c2',
 };
 const colorExprDark = ['match', ['get', 'restriction']];
 for (const r of RESTRICTIONS) colorExprDark.push(r.key, DARK_COLORS[r.key] || r.color);
@@ -84,21 +95,67 @@ const map = new maplibregl.Map({
   attributionControl: false,
   hash: true, // shareable URL: #zoom/lat/lng
 });
-map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-const geolocate = new maplibregl.GeolocateControl({
-  positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true,
-});
-map.addControl(geolocate, 'bottom-right');
-// Run the spot check only on an explicit locate request (button / trigger), not
-// on every passive tracking update — otherwise the card reopens after you close it.
-let geoRequested = false, lastGps = null;
-geolocate.on('trackuserlocationstart', () => { geoRequested = true; });
-geolocate.on('geolocate', (e) => {
-  lastGps = { lng: e.coords.longitude, lat: e.coords.latitude };
-  if (!geoRequested) return; // ignore passive tracking updates
-  geoRequested = false;
-  placeSpot(lastGps, { gps: true });
-});
+// One-shot "find my location" control: click → get GPS → fly there → spot check.
+// (Replaces MapLibre's GeolocateControl, which is a 3-state tracking toggle.)
+const LOCATE_ICON = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"/></svg>';
+class LocateControl {
+  onAdd(map) {
+    this._map = map;
+    const div = document.createElement('div');
+    div.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'locate-btn';
+    btn.setAttribute('aria-label', 'Find my location');
+    btn.title = 'Find my location';
+    btn.innerHTML = LOCATE_ICON;
+    btn.addEventListener('click', () => this._locate(btn));
+    div.appendChild(btn);
+    this._container = div;
+    return div;
+  }
+  onRemove() { this._container.remove(); this._map = undefined; }
+  _locate(btn) {
+    if (btn.classList.contains('locating')) return;            // a fix is already in flight
+    if (!navigator.geolocation) { toast('Location not available'); return; }
+    btn.classList.add('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        btn.classList.remove('locating');
+        const ll = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+        this._map.flyTo({ center: [ll.lng, ll.lat], zoom: Math.max(this._map.getZoom(), 13), duration: 800 });
+        this._map.once('moveend', () => placeSpot(ll, { gps: true }));
+      },
+      (err) => {
+        btn.classList.remove('locating');
+        toast(err && err.code === 1 ? 'Location permission denied' : 'Couldn’t get your location');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+}
+
+// Compact source credit (matches the design's bottom-right). Full credits live in the panel footer.
+class CreditControl {
+  onAdd() {
+    const d = document.createElement('div');
+    d.className = 'maplibregl-ctrl map-credit';
+    d.innerHTML = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> · Esri';
+    this._d = d;
+    return d;
+  }
+  onRemove() { this._d.remove(); }
+}
+
+// map controls live top-right (search + filter chips own the top-left).
+// Split into compass-only + zoom-only so the order is compass → zoom → locate.
+map.addControl(new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true }), 'top-right');
+map.addControl(new maplibregl.NavigationControl({ showZoom: true, showCompass: false }), 'top-right');
+map.addControl(new LocateControl(), 'top-right');
+// bottom-right: credit first, scale added last so the distance sits on top of the text
+map.addControl(new CreditControl(), 'bottom-right');
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-right');
+// (location is handled by the one-shot LocateControl defined above)
 
 /* ---------- state ---------- */
 const enabled = new Set(RESTRICTIONS.map((r) => r.key)); // visible restrictions
@@ -189,7 +246,7 @@ const sheetShare = document.getElementById('sheetShare');
 const sheetTop = sheet.querySelector('.sheet-top');
 
 // the sheet has two snap points: 'full' (all content) and 'peek' (just the header)
-const PEEK_VISIBLE = 100;             // px kept on screen when collapsed to peek
+const PEEK_VISIBLE = 168;             // px kept on screen when collapsed to peek (shows banner + coords)
 let sheetState = 'full';
 function setSheetState(state) {
   sheetState = state;
@@ -344,14 +401,27 @@ function validityText(p) {
 }
 // one expandable zone row — used inside the spot result sheet.
 // The "Apply / check with CAA" link lives inside each row's fold-out.
+const BADGE_SHORT = {
+  PROHIBITED: 'PROHIBITED', REQ_AUTHORISATION: 'AUTH REQ', CONDITIONAL: 'CONDITIONAL',
+  NO_RESTRICTION: 'OPEN', UNKNOWN: 'ZONE',
+};
 function zoneRow(p, opts = {}) {
   const color = COLOR_OF[p.restriction] || COLOR_OF.UNKNOWN;
   const msg = p.msgEn || p.msgLv;
+  const badge = BADGE_SHORT[p.restriction] || 'ZONE';
+  const authLine = p.authority
+    ? `<span class="zd-auth">${esc(p.authority)}${p.authPhone ? ' · ' + esc(p.authPhone) : (p.authEmail ? ' · ' + esc(p.authEmail) : '')}</span>` : '';
   return `<details class="zd${opts.dim ? ' dim' : ''}"${opts.open ? ' open' : ''}>
     <summary>
       <span class="zd-dot" style="background:${color}"></span>
-      <span class="zd-name">${esc(p.name)}</span>
-      <span class="zd-band">${esc(altText(p))}</span>
+      <span class="zd-main">
+        <span class="zd-row1">
+          <span class="zd-name">${esc(p.name)}</span>
+          <span class="zd-badge" style="color:${tintOf(color).ink};background:${color}22">${badge}</span>
+        </span>
+        <span class="zd-band">${esc(altText(p))}</span>
+        ${authLine}
+      </span>
       <svg class="zd-chev" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </summary>
     <div class="zd-body">
@@ -441,50 +511,75 @@ function placeSpot(lngLat, opts = {}) {
   }
 
   if (spotMarker) spotMarker.remove();
-  spotMarker = new maplibregl.Marker({ color }).setLngLat(ll).addTo(map);
+  const mEl = document.createElement('div');
+  mEl.className = 'spot-marker';
+  mEl.innerHTML = `<span class="sm-ping" style="background:${color}"></span>`
+    + `<span class="sm-ping sm-ping2" style="background:${color}"></span>`
+    + `<span class="sm-dot" style="box-shadow:0 0 0 3px ${color}, 0 3px 10px rgba(0,0,0,.7)"></span>`;
+  spotMarker = new maplibregl.Marker({ element: mEl, anchor: 'center' }).setLngLat(ll).addTo(map);
   renderSpot({ ll, hits, active, color, label, sev, gps: !!opts.gps, a3: a3StatusAt(ll) });
 }
 
 function renderSpot(s) {
-  const { ll, hits, active, color, label, gps } = s;
+  const { ll, hits, active, color, label, gps, sev } = s;
   const seasonal = hits.filter((h) => h.activeNow !== 1);
   const bySeverity = (a, b) =>
     (SEVERITY[b.restriction] || 0) - (SEVERITY[a.restriction] || 0) || (a.lower ?? 0) - (b.lower ?? 0);
   active.sort(bySeverity);   // strictest first, so the open row matches the verdict
   seasonal.sort(bySeverity);
 
-  let advice;
+  let subText;
   if (active.length) {
     const minFloor = Math.min(...active.map((h) => h.lower ?? 0));
-    advice = minFloor > 0
-      ? `Clear below <b>${minFloor} m AGL</b> · restricted above. Expand a zone for details.`
-      : `Restricted from the ground up — expand a zone below for details.`;
+    subText = `Inside ${active.length} active zone${active.length === 1 ? '' : 's'}`
+      + (minFloor > 0 ? ` · clear below ${minFloor} m AGL` : ' · restricted from the ground');
   } else {
-    advice = 'No UAS zone at this point. Still respect the 120 m open-category limit and current NOTAMs.';
+    subText = 'No active UAS zone at this spot.';
   }
 
+  // verdict icon: warning triangle for any restriction, check when clear
+  const icon = sev > 0
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="#10131a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18.5A2 2 0 0 0 3.5 21.5h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="#10131a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  const t = tintOf(color);
   const html = `
-    <div class="spot-head" style="background:${color}">
-      <div class="spot-verdict">${gps ? '📍 ' : ''}${esc(label)}</div>
-      <div class="spot-sub">${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)} · ${active.length} active zone${active.length === 1 ? '' : 's'}</div>
+    <div class="sv-banner" style="background:${t.bg};box-shadow:inset 0 0 0 1px ${t.line}">
+      <div class="sv-ico" style="background:${color}">${sev > 0 ? `<span class="sv-ping" style="background:${color}"></span>` : ''}${icon}</div>
+      <div style="flex:1;min-width:0">
+        <div class="sv-title" style="color:${t.ink}">${gps ? '📍 ' : ''}${esc(label)}</div>
+        <div class="sv-sub">${subText}</div>
+      </div>
       <button class="sheet-expand" aria-label="Centre on the marker and expand">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg>
       </button>
     </div>
-    <div class="spot-inner">
-      <div class="spot-advice">${advice}</div>
-      ${s.a3 ? `<div class="spot-a3 ${s.a3.flyable ? 'a3-ok' : 'a3-no'}"><b>A3:</b> ${s.a3.flyable
-        ? 'clear of built-up / recreational areas & roads here'
-        : 'within 150 m of a built-up / recreational area or road — A3 not allowed'}</div>` : ''}
-      ${(active.length || seasonal.length) ? `<div class="spot-zones">
-        ${active.map((p) => zoneRow(p)).join('')}
-        ${seasonal.length ? `<div class="spot-seasonal">Seasonal / not active now</div>` : ''}
-        ${seasonal.map((p) => zoneRow(p, { dim: true })).join('')}
-      </div>` : ''}
-      <div class="spot-weather" id="spotWeather">Loading weather…</div>
-    </div>`;
+    <div class="sv-meta">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#7fb0ff" stroke-width="2"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+      <span class="sv-coord">${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}</span>
+      <span class="sep">·</span>
+      <span id="spotDaylight">daylight…</span>
+    </div>
+    ${(active.length || seasonal.length) ? `<div class="sv-zones">
+      ${active.map((p) => zoneRow(p)).join('')}
+      ${seasonal.length ? `<div class="sv-seasonal">Seasonal / not active now</div>` : ''}
+      ${seasonal.map((p) => zoneRow(p, { dim: true })).join('')}
+    </div>` : `<div class="sv-advice">No UAS zone at this point. Still respect the 120 m open-category limit and current NOTAMs.</div>`}
+    <div class="sv-grid">
+      <div class="sv-wx" id="spotWeather"><div class="sv-card-h">Weather</div><div class="sv-wx-d">Loading…</div></div>
+      ${a3Card(s.a3)}
+    </div>
+    <div class="sv-disclaimer"><span class="warn">⚠</span><span>Not for operational use — confirm at <a href="https://airspace.lv/drones/en" target="_blank" rel="noopener">airspace.lv</a> and via NOTAM before flying.</span></div>`;
   openSheet(html, { share: true, panTo: ll, after: () => loadWeather(ll) });
   panel.classList.add('collapsed'); // a result opened — get the drawer out of the way
+}
+
+// A3 ground-risk card for the spot sheet (null when the layer isn't loaded/visible)
+function a3Card(a3) {
+  if (!a3) return `<div class="sv-a3"><div class="sv-card-h">A3 ground-risk</div><div class="sv-a3-d">Turn on the A3 layer to check this spot.</div></div>`;
+  return a3.flyable
+    ? `<div class="sv-a3 a3-ok"><div class="sv-card-h">A3 ground-risk</div><div class="sv-a3-v">Clear</div><div class="sv-a3-d">Outside 150 m of built-up areas &amp; roads.</div></div>`
+    : `<div class="sv-a3 a3-no"><div class="sv-card-h">A3 ground-risk</div><div class="sv-a3-v">Too built-up</div><div class="sv-a3-d">Within 150 m of buildings &amp; roads.</div></div>`;
 }
 
 /* ---------- weather + daylight (Open-Meteo, no key) ---------- */
@@ -509,20 +604,18 @@ async function loadWeather(ll) {
   else if (gust >= 8 || wind >= 8) { level = 'warn'; reasons.push('gusty'); }
   if (c.precipitation > 0) { level = level === 'bad' ? 'bad' : 'warn'; reasons.push('precipitation'); }
   if (!isDay) { level = level === 'bad' ? 'bad' : 'warn'; reasons.push('after dark'); }
-  const verdict = { ok: 'Good to fly', warn: 'Marginal', bad: 'Poor conditions' }[level];
+  const verdict = { ok: 'OK', warn: 'Marginal', bad: 'Poor' }[level];
   const hm = (iso) => iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—';
   const n0 = (x) => (x == null ? '—' : Math.round(x));
 
-  el.className = `spot-weather wx-${level}`;
-  el.innerHTML = `<div class="wx-top"><b>${verdict}</b>${reasons.length ? ' · ' + esc(reasons.join(', ')) : ''}</div>
-    <div class="wx-grid">
-      <span>💨 ${n0(wind)} m/s <span class="muted">gust ${n0(gust)}</span></span>
-      <span>🌡️ ${n0(c.temperature_2m)}°C</span>
-      <span>🌧️ ${c.precipitation ?? 0} mm</span>
-      <span>☁️ ${n0(c.cloud_cover)}%</span>
-      <span>🌅 ${hm(sunrise)}</span>
-      <span>🌇 ${hm(sunset)}</span>
-    </div>`;
+  el.className = `sv-wx wx-${level}`;
+  el.innerHTML = `<div class="sv-card-h">Weather · ${verdict}</div>
+    <div class="sv-wx-main"><span class="sv-temp">${n0(c.temperature_2m)}°</span><span class="sv-wx-sub">wind ${n0(wind)} m/s</span></div>
+    <div class="sv-wx-d">gust ${n0(gust)} · ${n0(c.cloud_cover)}% cloud · ☀ ${hm(sunrise)}–${hm(sunset)}</div>`;
+
+  const day = document.getElementById('spotDaylight');
+  if (day) day.textContent = isDay && sunset ? `daylight until ${hm(sunset)}`
+    : (sunrise ? `daylight from ${hm(sunrise)}` : '—');
 }
 
 /* ---------- splash ---------- */
@@ -739,18 +832,20 @@ function a3StatusAt(ll) {
 
 /* ---------- UI controls ---------- */
 document.getElementById('activeOnly').addEventListener('change', (e) => {
-  activeOnly = e.target.checked; applyFilter();
+  activeOnly = e.target.checked; applyFilter(); syncChips();
 });
 const altInput = document.getElementById('altitude');
 const altOn = document.getElementById('altOn');
 altOn.addEventListener('change', () => {
   altInput.disabled = !altOn.checked;
   altCap = altOn.checked ? +altInput.value : Infinity;
-  applyFilter();
+  applyFilter(); syncChips();
 });
 altInput.addEventListener('input', (e) => {
   document.getElementById('altVal').textContent = e.target.value;
+  document.getElementById('chipAltVal').textContent = e.target.value;
   if (altOn.checked) { altCap = +e.target.value; applyFilter(); }
+  syncChips();
 });
 
 document.getElementById('basemaps').addEventListener('click', (e) => {
@@ -764,12 +859,7 @@ document.getElementById('basemaps').addEventListener('click', (e) => {
   applyZoneStyleForBase(currentBase);
 });
 
-document.getElementById('threeD').addEventListener('change', (e) => {
-  is3D = e.target.checked;
-  map.setLayoutProperty('zones-3d', 'visibility', is3D ? 'visible' : 'none');
-  map.setLayoutProperty('zones-fill', 'visibility', is3D ? 'none' : 'visible');
-  map.easeTo({ pitch: is3D ? 55 : 0, duration: 600 });
-});
+// (3D height-columns toggle was removed from the layers menu)
 
 // A3 ground-risk overlay toggle (lazy-loads the GeoJSON on first activation)
 const a3On = document.getElementById('a3On');
@@ -780,7 +870,44 @@ if (a3On) a3On.addEventListener('change', async (e) => {
   } else {
     setA3Visible(false);
   }
+  syncChips();
 });
+
+/* ---------- filter chips (mirror the drawer / layers-menu controls) ---------- */
+const chipActive = document.getElementById('chipActive');
+const chipAlt = document.getElementById('chipAlt');
+const chipAltVal = document.getElementById('chipAltVal');
+const chipA3 = document.getElementById('chipA3');
+const activeOnlyCb = document.getElementById('activeOnly');
+function a3IsOn() {
+  return !!(map.getLayer('a3-fill') && map.getLayoutProperty('a3-fill', 'visibility') === 'visible');
+}
+function syncChips() {
+  chipActive.classList.toggle('on', activeOnly);
+  chipAlt.classList.toggle('on', isFinite(altCap));
+  if (isFinite(altCap)) chipAltVal.textContent = altCap;
+  chipA3.classList.toggle('on', a3IsOn());
+}
+chipActive.addEventListener('click', () => {
+  activeOnly = !activeOnly;
+  activeOnlyCb.checked = activeOnly;
+  applyFilter(); syncChips();
+});
+chipAlt.addEventListener('click', () => {
+  const on = !isFinite(altCap);
+  altOn.checked = on;
+  altInput.disabled = !on;
+  altCap = on ? +altInput.value : Infinity;
+  applyFilter(); syncChips();
+});
+chipA3.addEventListener('click', async () => {
+  const turnOn = !a3IsOn();
+  if (turnOn) { try { await ensureA3(); setA3Visible(true); } catch (_) { syncChips(); return; } }
+  else setA3Visible(false);
+  if (a3On) a3On.checked = turnOn;
+  syncChips();
+});
+syncChips();
 
 // sheet controls
 document.getElementById('sheetClose').addEventListener('click', closeSheet);
