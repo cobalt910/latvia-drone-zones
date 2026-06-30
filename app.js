@@ -269,6 +269,21 @@ function setSheetState(state) {
   updateRecenter();
 }
 
+const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)');
+// stagger a freshly-rendered block of content upward as its container appears (Apple-style settle)
+function cascadeIn(root) {
+  if (!root || REDUCE.matches) return;
+  const wrap = root.children.length === 1 ? root.firstElementChild : root;
+  const blocks = wrap === root ? root.children : wrap.children;
+  let i = 0;
+  for (const el of blocks) {
+    if (i > 7) break;                       // cap the cascade length
+    el.style.animationDelay = (i * 0.02) + 's';
+    el.classList.add('sheet-rise');
+    i++;
+  }
+}
+
 // write the content and raise the sheet up (a fresh result always opens full)
 function fillSheet(html, opts) {
   sheetBody.innerHTML = html;
@@ -281,6 +296,7 @@ function fillSheet(html, opts) {
   sheet.hidden = false;
   void sheet.offsetHeight;            // reflow so it animates from off-screen
   sheet.classList.add('open');
+  cascadeIn(sheetBody);               // settle the content up as the card rises
   if (opts.panTo) panAboveSheet(opts.panTo);
   if (opts.after) opts.after();       // content is in the DOM now
   updateRecenter();
@@ -312,7 +328,7 @@ function closeSheet() {
 // ease the point of interest up into the band above the sheet so it stays visible
 function panAboveSheet(ll) {
   const h = sheet.getBoundingClientRect().height || sheet.offsetHeight || 0;
-  map.easeTo({ center: [ll.lng, ll.lat], offset: [0, -h * 0.42], duration: 420 });
+  map.easeTo({ center: [ll.lng, ll.lat], offset: [0, -h * 0.42], duration: REDUCE.matches ? 0 : 420 });
 }
 // the recenter button only makes sense once the marker has been panned out of view
 // (off-screen, or hidden behind the peek bar at the bottom)
@@ -382,6 +398,7 @@ sheetBody.addEventListener('click', (e) => {
   if (!details || !body || details._animating) return;
   e.preventDefault();                       // take over the instant native toggle
   const opening = !details.open;
+  if (REDUCE.matches) { details.open = opening; return; }  // reduced-motion: skip the height tween
   details._animating = true;
   if (opening) details.open = true;         // reveal so we can measure the full height
   const full = body.scrollHeight;
@@ -633,6 +650,7 @@ async function loadWeather(ll) {
 function hideSplash() {
   const s = document.getElementById('splash');
   if (!s) return;
+  document.body.classList.add('ready');   // play the chrome's first-load entrance as the splash fades
   s.classList.add('hide');
   setTimeout(() => s.remove(), 600);
 }
