@@ -1,9 +1,9 @@
 {
-  "title": "UASZoneVersion_2026_07_02T10_33_48_792973Z",
-  "crc": "BD54597F",
+  "title": "UASZoneVersion_2026_07_04T10_07_54_526216Z",
+  "crc": "EBB783C3",
   "description": "The data set is provided by SJSC “Latvijas gaisa satiksme”. The data set contains information about restrictions and conditions over and in the vicinity of objects of national and public interest, permanent and temporary airspace structure elements that may affect the operation of UA flights",
-  "zoneCount": 402,
-  "volumeCount": 776,
+  "zoneCount": 406,
+  "volumeCount": 780,
   "sourceUrl": "https://drz.lv/api/v1/export-history/UASZoneVersion",
-  "generatedAt": "2026-07-03T05:35:33.747Z"
+  "generatedAt": "2026-07-05T05:41:05.147Z"
 }
